@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job Radar MVP</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">BACKEND-FIRST MVP · v0.2</div>
+        <h1>Job Radar</h1>
+        <p>Автосбор вакансий, дедупликация, AI-scoring и обучение на обратной связи.</p>
+      </div>
+      <div class="actions">
+        <button id="sync-mock">Demo</button>
+        <button id="sync-hh">HH</button>
+        <button id="sync-all" class="primary">Синхронизировать всё</button>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <label>Минимальный score <input id="score" type="number" min="0" max="100" value="50" /></label>
+      <button id="reload">Обновить ленту</button>
+      <span id="status"></span>
+    </section>
+
+    <section id="system" class="system"></section>
+    <section id="feed" class="feed"></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
