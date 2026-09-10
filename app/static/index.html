@@ -10,19 +10,19 @@
   <main>
     <header>
       <div>
-        <div class="eyebrow">BACKEND-FIRST MVP · v0.2</div>
+        <div class="eyebrow">BACKEND-FIRST MVP · v0.3</div>
         <h1>Job Radar</h1>
         <p>Автосбор вакансий, дедупликация, AI-scoring и обучение на обратной связи.</p>
       </div>
       <div class="actions">
-        <button id="sync-mock">Demo</button>
+        <button id="settings">Настроить поиск</button>
         <button id="sync-hh">HH</button>
         <button id="sync-all" class="primary">Синхронизировать всё</button>
       </div>
     </header>
 
     <section class="toolbar">
-      <label>Минимальный score <input id="score" type="number" min="0" max="100" value="50" /></label>
+      <label>Минимальный score <input id="score" type="number" min="0" max="100" value="40" /></label>
       <button id="reload">Обновить ленту</button>
       <span id="status"></span>
     </section>
@@ -30,6 +30,62 @@
     <section id="system" class="system"></section>
     <section id="feed" class="feed"></section>
   </main>
+
+  <div id="onboarding" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">НАСТРОЙКА ЛЕНТЫ</div>
+          <h2>Что ищем?</h2>
+        </div>
+        <button id="close-onboarding" class="icon-button" aria-label="Закрыть">×</button>
+      </div>
+      <p class="modal-copy">Эти данные управляют и поиском по источникам, и рейтингом вакансий. Можно менять в любой момент.</p>
+
+      <form id="onboarding-form">
+        <label class="field field-wide">
+          <span>Профессия и варианты названия *</span>
+          <textarea id="desired-terms" rows="3" placeholder="Event manager, Event producer, менеджер мероприятий, менеджер спецпроектов"></textarea>
+          <small>Через запятую или с новой строки. Это основной поисковый запрос.</small>
+        </label>
+
+        <div class="form-grid">
+          <label class="field">
+            <span>Город / города</span>
+            <input id="locations" type="text" placeholder="Москва" />
+          </label>
+          <label class="field">
+            <span>Минимальная зарплата, ₽</span>
+            <input id="min-salary" type="number" min="0" step="10000" placeholder="120000" />
+          </label>
+        </div>
+
+        <label class="check-row">
+          <input id="remote-ok" type="checkbox" />
+          <span>Показывать удалённые вакансии</span>
+        </label>
+
+        <label class="field field-wide">
+          <span>Приоритетные компании</span>
+          <textarea id="target-companies" rows="2" placeholder="VK, Яндекс, Т-Банк, Авито"></textarea>
+        </label>
+
+        <label class="field field-wide">
+          <span>Что точно не подходит</span>
+          <textarea id="excluded-terms" rows="2" placeholder="свадьбы, аниматор, продажи"></textarea>
+        </label>
+
+        <label class="field field-wide">
+          <span>Свободное описание пожеланий</span>
+          <textarea id="notes" rows="3" placeholder="Например: интересны крупные IT-компании, конференции, форумы и спецпроекты. Не хочу чистые продажи."></textarea>
+        </label>
+
+        <div id="onboarding-error" class="form-error"></div>
+        <button class="primary save-button" type="submit">Сохранить и собрать первую ленту</button>
+      </form>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

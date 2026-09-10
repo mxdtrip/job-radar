@@ -16,7 +16,7 @@ _next_run_at: datetime | None = None
 _last_results: list[dict] = []
 
 
-def run_sync_cycle() -> list[dict]:
+def run_sync_cycle(force_full: bool = False) -> list[dict]:
     global _last_cycle_at, _last_results, _next_run_at
     if not _lock.acquire(blocking=False):
         return _last_results
@@ -24,7 +24,12 @@ def run_sync_cycle() -> list[dict]:
         results: list[dict] = []
         with SessionLocal() as db:
             for source in enabled_sources():
-                result = sync_source(db, source, settings.sync_limit_per_source)
+                result = sync_source(
+                    db,
+                    source,
+                    settings.sync_limit_per_source,
+                    force_full=force_full,
+                )
                 results.append(result.model_dump())
         _last_cycle_at = datetime.now(timezone.utc)
         _last_results = results

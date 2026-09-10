@@ -24,11 +24,11 @@ def env_list(name: str, default: str) -> list[str]:
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./job_radar.db")
     http_user_agent: str = os.getenv(
-        "HTTP_USER_AGENT", "JobRadarMVP/0.2 (+personal job search; contact: replace-me@example.com)"
+        "HTTP_USER_AGENT", "JobRadarMVP/0.3 (+personal job search; contact: replace-me@example.com)"
     )
 
     hh_user_agent: str = os.getenv(
-        "HH_USER_AGENT", "JobRadarMVP/0.2 (replace-with-your-email@example.com)"
+        "HH_USER_AGENT", "JobRadarMVP/0.3 (replace-with-your-email@example.com)"
     )
     hh_search_text: str = os.getenv(
         "HH_SEARCH_TEXT",

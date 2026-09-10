@@ -17,23 +17,18 @@ from app.sources.base import RawVacancy, VacancySource
 def get_or_create_preferences(db: Session) -> Preference:
     pref = db.get(Preference, 1)
     if pref is None:
+        # Search criteria are intentionally empty for a fresh install.
+        # The web onboarding fills them before the first real sync.
         pref = Preference(
             id=1,
-            desired_terms=[
-                "event manager", "event producer", "менеджер мероприятий", "менеджер спецпроектов",
-                "менеджер специальных проектов", "продюсер мероприятий", "event marketing",
-                "корпоративных мероприятий", "событийного маркетинга",
-            ],
-            excluded_terms=["свадьбы", "свадеб", "аниматор", "продажа банкетов"],
-            locations=["Москва"],
-            target_companies=["VK", "Яндекс", "Т-Банк", "Авито", "Ozon", "Сбер", "Альфа-Банк"],
+            desired_terms=[],
+            excluded_terms=[],
+            locations=[],
+            target_companies=[],
             excluded_companies=[],
-            min_salary=120000,
+            min_salary=None,
             remote_ok=True,
-            notes=(
-                "Ищем event / спецпроекты / event marketing в сильных компаниях и агентствах. "
-                "Интересны конференции, форумы, бренд-ивенты, корпоративные и деловые мероприятия."
-            ),
+            notes="",
         )
         db.add(pref)
         db.commit()
@@ -73,7 +68,6 @@ def _merge_row(row: Vacancy, raw: RawVacancy) -> bool:
     for attr in ("title", "company", "location", "experience", "employment"):
         incoming = getattr(raw, attr)
         if incoming and incoming != getattr(row, attr):
-            # For text identity fields prefer the freshest non-empty value.
             setattr(row, attr, incoming)
             changed = True
     if raw.remote and not row.remote:
@@ -98,7 +92,12 @@ def _merge_row(row: Vacancy, raw: RawVacancy) -> bool:
     return changed
 
 
-def _score(row_or_raw: Vacancy | RawVacancy, pref: Preference, learning: LearningProfile | None, use_llm: bool) -> tuple[float, list[str]]:
+def _score(
+    row_or_raw: Vacancy | RawVacancy,
+    pref: Preference,
+    learning: LearningProfile | None,
+    use_llm: bool,
+) -> tuple[float, list[str]]:
     raw = to_raw(row_or_raw) if isinstance(row_or_raw, Vacancy) else row_or_raw
     heuristic, reasons = score_vacancy(raw, pref, learning)
     if not use_llm or heuristic < settings.llm_min_heuristic_score:
@@ -124,13 +123,36 @@ def rescore_all(db: Session, use_llm: bool = False) -> int:
     return len(rows)
 
 
-def sync_source(db: Session, source: VacancySource, limit: int) -> SyncResult:
+def _fetch_rows(
+    source: VacancySource,
+    pref: Preference,
+    limit: int,
+    since: datetime | None,
+    known_ids: set[str],
+) -> list[RawVacancy]:
+    """Let sources use user preferences when they support contextual search."""
+    contextual_fetch = getattr(source, "fetch_for_preferences", None)
+    if callable(contextual_fetch):
+        return contextual_fetch(
+            preference=pref,
+            limit=limit,
+            since=since,
+            known_ids=known_ids,
+        )
+    return source.fetch(limit=limit, since=since, known_ids=known_ids)
+
+
+def sync_source(db: Session, source: VacancySource, limit: int, force_full: bool = False) -> SyncResult:
     inserted = updated = duplicates = 0
+    state = db.get(SourceState, source.name)
+    previous_sync_at = state.last_sync_at if state else None
     try:
-        state = db.get(SourceState, source.name)
-        known_ids = set(db.scalars(select(VacancySourceRef.external_id).where(VacancySourceRef.source == source.name)).all())
-        rows = source.fetch(limit=limit, since=state.last_sync_at if state else None, known_ids=known_ids)
         pref = get_or_create_preferences(db)
+        known_ids = set(db.scalars(
+            select(VacancySourceRef.external_id).where(VacancySourceRef.source == source.name)
+        ).all())
+        effective_since = None if force_full else previous_sync_at
+        rows = _fetch_rows(source, pref, limit, effective_since, known_ids)
         learning = db.get(LearningProfile, 1)
 
         for raw in rows:
@@ -153,7 +175,6 @@ def sync_source(db: Session, source: VacancySource, limit: int) -> SyncResult:
                     updated += 1
                     continue
 
-            # Compatibility with v0.1 databases before vacancy_source_refs existed.
             legacy = db.scalar(select(Vacancy).where(
                 Vacancy.source == raw.source, Vacancy.external_id == raw.external_id
             ))
@@ -194,18 +215,32 @@ def sync_source(db: Session, source: VacancySource, limit: int) -> SyncResult:
             ))
             inserted += 1
 
-        state = db.get(SourceState, source.name) or SourceState(source=source.name)
+        state = state or SourceState(source=source.name)
         state.last_sync_at = datetime.now(timezone.utc)
         state.last_error = None
         state.items_seen = (state.items_seen or 0) + len(rows)
         db.add(state)
         db.commit()
-        return SyncResult(source=source.name, fetched=len(rows), inserted=inserted, updated=updated, duplicates=duplicates)
+        return SyncResult(
+            source=source.name,
+            fetched=len(rows),
+            inserted=inserted,
+            updated=updated,
+            duplicates=duplicates,
+        )
     except Exception as exc:
         db.rollback()
         state = db.get(SourceState, source.name) or SourceState(source=source.name)
-        state.last_sync_at = datetime.now(timezone.utc)
+        # Critical: a failed request must NOT move the incremental cursor forward.
+        state.last_sync_at = previous_sync_at
         state.last_error = str(exc)[:2000]
         db.add(state)
         db.commit()
-        return SyncResult(source=source.name, fetched=0, inserted=0, updated=0, duplicates=0, error=str(exc))
+        return SyncResult(
+            source=source.name,
+            fetched=0,
+            inserted=0,
+            updated=0,
+            duplicates=0,
+            error=str(exc),
+        )

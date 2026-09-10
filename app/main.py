@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="Job Radar MVP", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Job Radar MVP", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -51,7 +51,7 @@ def index():
 def health():
     return {
         "ok": True,
-        "version": "0.2.0",
+        "version": "0.3.0",
         "llm_configured": bool(settings.llm_enabled and settings.openai_api_key),
         "scheduler": scheduler_status(),
     }
@@ -76,6 +76,32 @@ def vacancies(
         ))
     stmt = stmt.order_by(desc(Vacancy.score), desc(Vacancy.published_at), desc(Vacancy.id)).limit(limit)
     return list(db.scalars(stmt).unique().all())
+
+
+@app.get("/api/stats")
+def stats(
+    min_score: float = Query(40, ge=0, le=100),
+    db: Session = Depends(get_db),
+):
+    reviewed = select(Feedback.vacancy_id).where(Feedback.action.in_(["like", "dislike", "skip"]))
+    active_filter = Vacancy.active.is_(True)
+    total = db.scalar(select(func.count(Vacancy.id)).where(active_filter)) or 0
+    unreviewed = db.scalar(select(func.count(Vacancy.id)).where(active_filter, Vacancy.id.not_in(reviewed))) or 0
+    matching = db.scalar(select(func.count(Vacancy.id)).where(
+        active_filter,
+        Vacancy.id.not_in(reviewed),
+        Vacancy.score >= min_score,
+    )) or 0
+    source_rows = db.execute(
+        select(Vacancy.source, func.count(Vacancy.id)).where(active_filter).group_by(Vacancy.source)
+    ).all()
+    return {
+        "total": total,
+        "unreviewed": unreviewed,
+        "matching": matching,
+        "min_score": min_score,
+        "by_primary_source": {name: count for name, count in source_rows},
+    }
 
 
 @app.get("/api/vacancies/{vacancy_id}", response_model=VacancyOut)
@@ -134,18 +160,22 @@ def rescore(use_llm: bool = False, db: Session = Depends(get_db)):
 
 
 @app.post("/api/sync/{source_name}", response_model=SyncResult)
-def sync(source_name: str, db: Session = Depends(get_db)):
+def sync(
+    source_name: str,
+    full: bool = False,
+    db: Session = Depends(get_db),
+):
     source = ALL_SOURCES.get(source_name)
     if not source:
         raise HTTPException(status_code=404, detail=f"Unknown source: {source_name}")
     if not getattr(source, "configured", True):
         raise HTTPException(status_code=409, detail=f"Source {source_name} is not configured")
-    return sync_source(db, source, settings.sync_limit_per_source)
+    return sync_source(db, source, settings.sync_limit_per_source, force_full=full)
 
 
 @app.post("/api/sync-all")
-def sync_all():
-    return {"ok": True, "results": run_sync_cycle()}
+def sync_all(full: bool = False):
+    return {"ok": True, "full": full, "results": run_sync_cycle(force_full=full)}
 
 
 @app.get("/api/scheduler")

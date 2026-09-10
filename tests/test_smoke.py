@@ -42,7 +42,7 @@ def test_health_and_feed():
         health = client.get("/api/health")
         assert health.status_code == 200
         assert health.json()["ok"] is True
-        assert health.json()["version"] == "0.2.0"
+        assert health.json()["version"] == "0.3.0"
 
         feed = client.get("/api/vacancies")
         assert feed.status_code == 200
@@ -101,3 +101,39 @@ def test_learning_profile_updates_from_feedback():
         with SessionLocal() as db:
             stored = db.get(LearningProfile, 1)
             assert stored is not None and stored.feedback_count >= 2
+
+
+def test_stats_endpoint():
+    with TestClient(app) as client:
+        stats = client.get("/api/stats?min_score=40")
+        assert stats.status_code == 200
+        payload = stats.json()
+        assert payload["total"] >= 1
+        assert "unreviewed" in payload
+        assert "matching" in payload
+
+
+class FailingSource:
+    name = "failure-cursor-test"
+    configured = True
+
+    def fetch(self, limit=40, since=None, known_ids=None):
+        raise RuntimeError("temporary source failure")
+
+
+def test_failed_sync_does_not_advance_cursor():
+    from datetime import datetime, timezone
+    from app.models import SourceState
+
+    with TestClient(app):
+        with SessionLocal() as db:
+            old = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            db.add(SourceState(source="failure-cursor-test", last_sync_at=old))
+            db.commit()
+            result = sync_source(db, FailingSource(), 10)
+            assert result.error
+            db.expire_all()
+            state = db.get(SourceState, "failure-cursor-test")
+            assert state.last_sync_at is not None
+            # SQLite may return a naive datetime even when timezone=True.
+            assert state.last_sync_at.replace(tzinfo=timezone.utc) == old
